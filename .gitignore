@@ -1,0 +1,7 @@
+# Ignore patterns
+.git/
+.DS_Store
+*.swp
+*.swo
+*~
+.nvim/
