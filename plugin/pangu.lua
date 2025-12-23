@@ -6,18 +6,18 @@ local pangu = require("pangu")
 pangu.setup()
 
 -- User command: Format entire buffer
-vim.api.nvim_create_user_command("PanguFormat", function()
+vim.api.nvim_create_user_command("Pangu", function()
 	pangu.format_buffer()
 end, {})
 
 -- User command: Format current line
-vim.api.nvim_create_user_command("PanguFormatLine", function()
+vim.api.nvim_create_user_command("PanguLine", function()
 	local line = vim.fn.line(".")
 	pangu.format_range(line, line)
 end, {})
 
 -- User command: Format selection (visual mode)
-vim.api.nvim_create_user_command("PanguFormatSelection", function()
+vim.api.nvim_create_user_command("PanguSelection", function()
 	local start_line = vim.fn.getpos("'<")[2]
 	local end_line = vim.fn.getpos("'>")[2]
 	pangu.format_range(start_line, end_line)

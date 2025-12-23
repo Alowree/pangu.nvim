@@ -5,19 +5,25 @@ local M = {}
 -- Default configuration
 M.defaults = {
 	-- Enable specific formatting rules
-	enable_spacing = true,           -- Add spaces between CJK and English/Digit
-	enable_punct_convert = true,     -- Convert English punctuation to Chinese
-	enable_paren_convert = true,     -- Convert English parentheses to Chinese
-	enable_dedup_marks = true,       -- Remove duplicate punctuation marks
-	
+	enable_spacing = true, -- Add spaces between CJK and English/Digit
+	enable_punct_convert = true, -- Convert English punctuation to Chinese
+	enable_paren_convert = true, -- Convert English parentheses to Chinese
+	enable_dedup_marks = true, -- Remove duplicate punctuation marks
+
 	-- Autocommands
-	enable_on_save = true,           -- Format on file save
+	enable_on_save = true, -- Format on file save
 	file_patterns = { "*.md", "*.txt", "*.norg" },
-	
+
+	-- Quote conversion
+	enable_quote_convert = true, -- Convert ASCII quotes to Chinese quotes in CJK contexts
+
 	-- Spacing configuration
 	add_space_between_cjk_and_english = true,
 	add_space_between_cjk_and_digit = true,
-	add_space_around_markdown = true,  -- Space around inline code, bold, links
+	add_space_around_markdown = true, -- Space around inline code, bold, links
+
+	-- Code block handling
+	skip_code_blocks = true, -- Skip formatting inside markdown code blocks (``` or ````)
 }
 
 -- Current configuration
