@@ -231,15 +231,43 @@ Output: 中文 123 中文
 
 **3. Markdown Spacing** (controlled by `enable_spacing` → `add_space_around_markdown`)
 
+Inline Code (backticks):
+
 ```
-Input:  中文和`code`之间
-Output: 中文和 `code` 之间
+Input:  中文和`code`之间，前面和后面都是中文，前后分别添加一个空格
+Output: 中文和 `code` 之间，前面和后面都是中文，前后分别添加一个空格
 
-Input:  中文**粗体**中文
-Output: 中文 **粗体** 中文
+Input:  注意：`code`前面是标点符号时，不添加空格
+Output: 注意：`code` 前面是标点符号时，不添加空格
 
-Input:  点击[这里](https://example.com)查看
-Output: 点击 [这里](https://example.com) 查看
+Input:  注意`code`：后面是标点符号时，不添加空格
+Output: 注意 `code`：后面是标点符号时，不添加空格
+```
+
+Bold text (**text**):
+
+```
+Input:  中文和**粗体**之间，前面和后面都是中文，前后分别添加一个空格
+Output: 中文和 **粗体** 之间，前面和后面都是中文，前后分别添加一个空格
+
+Input:  注意：**粗体**前面是标点符号时，不添加空格
+Output: 注意：**粗体** 前面是标点符号时，不添加空格
+
+Input:  注意**粗体**：后面是标点符号时，不添加空格
+Output: 注意 **粗体**：后面是标点符号时，不添加空格
+```
+
+Links ([text](url)):
+
+```
+Input:  点击[这里](https://example.com)查看更多内容
+Output: 点击 [这里](https://example.com) 查看更多内容
+
+Input:  注意：[点击这里](https://example.com)前面是标点符号时，不添加空格
+Output: 注意：[点击这里](https://example.com) 前面是标点符号时，不添加空格
+
+Input:  点击[这里](https://example.com)：后面是标点符号时，不添加空格
+Output: 点击 [这里](https://example.com)：后面是标点符号时，不添加空格
 ```
 
 **4. Punctuation Conversion** (controlled by `enable_punct_convert`)

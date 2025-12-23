@@ -82,48 +82,155 @@ end
 
 -- Add spaces between CJK and Markdown constructs (inline code, bold markers, links)
 local function add_space_around_markdown(text)
-	-- Add spaces around **bold** as a complete unit
-	text = string.gsub(text, "([^ ])(%*%*[^*]+%*%*)([^ ])", "%1 %2 %3")
-
-	-- Add spaces around [link](url) as a complete unit
-	text = string.gsub(text, "([^ ])(%[[^]]*%]%([^)]*%))", "%1 %2")
-	text = string.gsub(text, "(%[[^]]*%]%([^)]*%))([^ ])", "%1 %2")
-
-	-- Add spaces around backticks
-	local result = {}
+	-- Token-based approach: detect markdown units (`code`, **bold**, [link](url))
+	-- and add spaces only on the Chinese-character side (not on Chinese punctuation).
 	local tokens = tokenizer.tokenize(text)
+	local out = {}
+	local i = 1
+	while i <= #tokens do
+		local t = tokens[i]
 
-	local function next_non_ws(i)
-		local j = i + 1
-		while j <= #tokens and tokens[j].type == tokenizer.TokenType.WHITESPACE do
-			j = j + 1
-		end
-		return j
-	end
-
-	for i = 1, #tokens do
-		table.insert(result, tokens[i].token)
-
-		if i < #tokens then
-			local j = next_non_ws(i)
-			if j <= #tokens then
-				local curr_type = tokens[i].type
-				local next_type = tokens[j].type
-
-				if tokens[i + 1].type ~= tokenizer.TokenType.WHITESPACE then
-					-- Only add spaces around backticks
-					if curr_type == tokenizer.TokenType.CHINESE and next_type == tokenizer.TokenType.MARKDOWN_CODE then
-						table.insert(result, " ")
-					end
-					if curr_type == tokenizer.TokenType.MARKDOWN_CODE and next_type == tokenizer.TokenType.CHINESE then
-						table.insert(result, " ")
-					end
+		-- Inline code delimited by backticks
+		if t.token == "`" then
+			local k = nil
+			for j = i + 1, #tokens do
+				if tokens[j].token == "`" then
+					k = j
+					break
 				end
 			end
+			if not k then
+				table.insert(out, t.token)
+				i = i + 1
+			else
+				-- prev non-ws
+				local p = i - 1
+				while p >= 1 and tokens[p].type == tokenizer.TokenType.WHITESPACE do
+					p = p - 1
+				end
+				-- next non-ws
+				local q = k + 1
+				while q <= #tokens and tokens[q].type == tokenizer.TokenType.WHITESPACE do
+					q = q + 1
+				end
+
+				if p >= 1 and tokens[p].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[p].token) then
+					if #out > 0 and out[#out] ~= " " then
+						table.insert(out, " ")
+					end
+				end
+
+				for j = i, k do
+					table.insert(out, tokens[j].token)
+				end
+
+				if q <= #tokens and tokens[q].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[q].token) then
+					table.insert(out, " ")
+				end
+
+				i = k + 1
+			end
+
+		-- Bold markers **...** (supporting ** only)
+		elseif t.token == "*" and tokens[i + 1] and tokens[i + 1].token == "*" then
+			local start = i
+			local k = nil
+			for j = i + 2, #tokens - 1 do
+				if tokens[j].token == "*" and tokens[j + 1] and tokens[j + 1].token == "*" then
+					k = j + 1
+					break
+				end
+			end
+			if not k then
+				table.insert(out, t.token)
+				i = i + 1
+			else
+				local p = start - 1
+				while p >= 1 and tokens[p].type == tokenizer.TokenType.WHITESPACE do
+					p = p - 1
+				end
+				local q = k + 1
+				while q <= #tokens and tokens[q].type == tokenizer.TokenType.WHITESPACE do
+					q = q + 1
+				end
+
+				if p >= 1 and tokens[p].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[p].token) then
+					if #out > 0 and out[#out] ~= " " then
+						table.insert(out, " ")
+					end
+				end
+
+				for j = start, k do
+					table.insert(out, tokens[j].token)
+				end
+
+				if q <= #tokens and tokens[q].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[q].token) then
+					table.insert(out, " ")
+				end
+
+				i = k + 1
+			end
+
+		-- Links [text](url)
+		elseif t.token == "[" then
+			local end_br = nil
+			for j = i + 1, #tokens do
+				if tokens[j].token == "]" then
+					end_br = j
+					break
+				end
+			end
+			if end_br and tokens[end_br + 1] and tokens[end_br + 1].token == "(" then
+				local close_paren = nil
+				for j = end_br + 2, #tokens do
+					if tokens[j].token == ")" then
+						close_paren = j
+						break
+					end
+				end
+				if close_paren then
+					local p = i - 1
+					while p >= 1 and tokens[p].type == tokenizer.TokenType.WHITESPACE do
+						p = p - 1
+					end
+					local q = close_paren + 1
+					while q <= #tokens and tokens[q].type == tokenizer.TokenType.WHITESPACE do
+						q = q + 1
+					end
+
+					if p >= 1 and tokens[p].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[p].token) then
+						if #out > 0 and out[#out] ~= " " then
+							table.insert(out, " ")
+						end
+					end
+
+					for j = i, close_paren do
+						table.insert(out, tokens[j].token)
+					end
+
+					if q <= #tokens and tokens[q].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[q].token) then
+						table.insert(out, " ")
+					end
+
+					i = close_paren + 1
+				else
+					table.insert(out, t.token)
+					i = i + 1
+				end
+			else
+				table.insert(out, t.token)
+				i = i + 1
+			end
+
+		else
+			table.insert(out, t.token)
+			i = i + 1
 		end
 	end
 
-	return table.concat(result)
+	local s = table.concat(out)
+	s = s:gsub("%s%s+", " ")
+	return s
 end
 
 -- Convert English punctuation to Chinese equivalents when preceded by CJK

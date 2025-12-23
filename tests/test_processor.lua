@@ -58,6 +58,7 @@ end
 local tests = {
 	{ input = "中文English中文", out = "中文 English 中文", desc = "CJK <-> English spacing" },
 	{ input = "中文123中文", out = "中文 123 中文", desc = "CJK <-> Digit spacing" },
+	-- Chinese characters on both sides of inline / bold / links
 	{ input = "中文和`code`之间", out = "中文和 `code` 之间", desc = "CJK and inline code spacing" },
 	{ input = "中文**粗体**中文", out = "中文 **粗体** 中文", desc = "CJK and bold spacing" },
 	{
@@ -65,6 +66,44 @@ local tests = {
 		out = "超链接样式 [点击这里](http://example.com) 有很多种",
 		desc = "CJK and link spacing",
 	},
+	-- Punctuation-adjacent tests: when one side is Chinese punctuation,
+	-- only add space on the Chinese-character side, not the punctuation side.
+	-- Inline code cases
+	{
+		input = "注意：`code`前面是标点符号时，不添加空格",
+		out = "注意：`code` 前面是标点符号时，不添加空格",
+		desc = "Code: punctuation before, add space after only",
+	},
+	{
+		input = "注意`code`：后面是标点符号时，不添加空格",
+		out = "注意 `code`：后面是标点符号时，不添加空格",
+		desc = "Code: punctuation after, add space before only",
+	},
+
+	-- Bold (**...**) cases
+	{
+		input = "注意：**粗体**前面是标点符号时，不添加空格",
+		out = "注意：**粗体** 前面是标点符号时，不添加空格",
+		desc = "Bold: punctuation before, add space after only",
+	},
+	{
+		input = "注意**粗体**：后面是标点符号时，不添加空格",
+		out = "注意 **粗体**：后面是标点符号时，不添加空格",
+		desc = "Bold: punctuation after, add space before only",
+	},
+
+	-- Link cases
+	{
+		input = "注意：[点击](http://example.com)前面是标点符号时，不添加空格",
+		out = "注意：[点击](http://example.com) 前面是标点符号时，不添加空格",
+		desc = "Link: punctuation before, add space after only",
+	},
+	{
+		input = "注意[点击](http://example.com)：后面是标点符号时，不添加空格",
+		out = "注意 [点击](http://example.com)：后面是标点符号时，不添加空格",
+		desc = "Link: punctuation after, add space before only",
+	},
+	-- Punctuation versions
 	{ input = "中文,", out = "中文，", desc = "Comma converted" },
 	{ input = "中文.", out = "中文。", desc = "Period converted" },
 	{ input = "中文?", out = "中文？", desc = "Question mark converted" },
@@ -72,6 +111,7 @@ local tests = {
 	{ input = "中文(备注)中文", out = "中文（备注）中文", desc = "Parentheses converted" },
 	{ input = '中文"引用"中文', out = "中文“引用”中文", desc = "Double quote converted" },
 	{ input = "中文'单引'中文", out = "中文‘单引’中文", desc = "Single quote converted" },
+	-- Truncate repated punctuations
 	{ input = "中文，，，", out = "中文，", desc = "Truncate repeated ，" },
 	{ input = "中文。。。", out = "中文。", desc = "Truncate repeated 。" },
 	{ input = "中文？？？", out = "中文？", desc = "Truncate repeated ？" },
@@ -101,16 +141,16 @@ local code_block_tests = {
 -- Helper function to test code block skipping
 local function test_code_block_skipping()
 	local failures_cb = {}
-	
+
 	for _, test in ipairs(code_block_tests) do
 		-- Save original config
 		local orig_skip = pangu.config.get("skip_code_blocks")
-		
+
 		-- Set skip_code_blocks flag using the config API
 		pangu.config.set("skip_code_blocks", test.skip_enabled)
-		
+
 		local input = "中文English\n```\n中文English\n```\n中文English"
-		
+
 		-- Split input into lines and process using the same logic as M.format_buffer
 		local result_lines = {}
 		local in_code_block = false
@@ -131,46 +171,52 @@ local function test_code_block_skipping()
 				table.insert(result_lines, pangu.format(line))
 			end
 		end
-		
+
 		local result_text = table.concat(result_lines, "\n")
-		
+
 		-- Check assertions
 		local passed = true
-		
+
 		if test.check_contains and not result_text:find(test.check_contains, 1, true) then
 			passed = false
 			io.stderr:write(
-				string.format("[FAIL] Code block test: %s\n  Should contain: '%s'\n  Got: %s\n\n",
-					test.desc, test.check_contains, result_text)
+				string.format(
+					"[FAIL] Code block test: %s\n  Should contain: '%s'\n  Got: %s\n\n",
+					test.desc,
+					test.check_contains,
+					result_text
+				)
 			)
 		end
-		
+
 		if test.check_not_contains and result_text:find(test.check_not_contains, 1, true) then
 			passed = false
 			io.stderr:write(
-				string.format("[FAIL] Code block test: %s\n  Should NOT contain: '%s'\n  Got: %s\n\n",
-					test.desc, test.check_not_contains, result_text)
+				string.format(
+					"[FAIL] Code block test: %s\n  Should NOT contain: '%s'\n  Got: %s\n\n",
+					test.desc,
+					test.check_not_contains,
+					result_text
+				)
 			)
 		end
-		
+
 		if passed then
 			io.stdout:write(string.format("[OK] Code block test: %s\n", test.desc))
 		else
 			table.insert(failures_cb, { desc = test.desc, skip_enabled = test.skip_enabled })
 		end
-		
+
 		-- Restore original config
 		pangu.config.set("skip_code_blocks", orig_skip)
 	end
-	
+
 	return failures_cb
 end
 
 -- Run code block tests
 io.stdout:write("\n--- Code Block Skipping Tests ---\n")
 local code_block_failures = test_code_block_skipping()
-
-
 
 local failures = {}
 for i, t in ipairs(tests) do
@@ -197,4 +243,3 @@ else
 	io.stdout:write("\nAll tests passed\n")
 	os.exit(0)
 end
-

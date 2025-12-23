@@ -7,7 +7,12 @@ function M.is_chinese(char)
 	if not char or #char == 0 then
 		return false
 	end
-	local code = utf8.codepoint(char)
+	local code
+	if utf8 and utf8.codepoint then
+		code = utf8.codepoint(char)
+	else
+		code = vim.fn.char2nr(char)
+	end
 	if not code then
 		return false
 	end
