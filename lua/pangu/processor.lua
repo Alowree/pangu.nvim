@@ -444,6 +444,11 @@ function M.format(text)
 		return text
 	end
 
+	-- Global enable/disable
+	if config.get("enabled") == false then
+		return text
+	end
+
 	-- Apply transformations based on config
 	if config.get("enable_spacing") then
 		-- Apply fine-grained spacing rules
@@ -483,26 +488,45 @@ local function is_code_block_fence(line)
 	return line:match("^%s*`%`%`%`*") ~= nil
 end
 
+-- Check if a line is an ignore-start or ignore-end directive for pangu
+local function is_ignore_start(line)
+	return line and line:match("pangu%-ignore%-start") ~= nil
+end
+
+local function is_ignore_end(line)
+	return line and line:match("pangu%-ignore%-end") ~= nil
+end
+
 -- Format a buffer or range
 function M.format_buffer(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
 
 	local in_code_block = false
+	local in_ignore = false
 	for i, line in ipairs(lines) do
-		-- Check if this line is a code block fence
-		if line:match("^%s*`{3,}") then
-			-- Always add fence line as-is
-			-- Toggle code block state only if skip_code_blocks is enabled
-			if config.get("skip_code_blocks") then
-				in_code_block = not in_code_block
-			end
-		elseif in_code_block and config.get("skip_code_blocks") then
-			-- Inside code block and skip is enabled: keep as-is
-			-- Don't format
+		local start_directive = is_ignore_start(line)
+		local end_directive = is_ignore_end(line)
+
+		if start_directive then
+			in_ignore = true
+		end
+
+		local is_fence = line:match("^%s*`{3,}") and config.get("skip_code_blocks")
+		if is_fence then
+			in_code_block = not in_code_block
+		end
+
+		-- Skip formatting if inside ignore directives or inside a code block (when enabled),
+		-- or if the line itself is a directive/fence (preserve lines as-is)
+		if start_directive or end_directive or (in_ignore) or (is_fence or (in_code_block and config.get("skip_code_blocks"))) then
+			-- do nothing, preserve line as-is
 		else
-			-- Outside code block or skip disabled: format
 			lines[i] = M.format(line)
+		end
+
+		if end_directive then
+			in_ignore = false
 		end
 	end
 
@@ -516,11 +540,17 @@ function M.format_range(bufnr, start_line, end_line)
 	-- Get all lines to track code block state from the beginning
 	local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
 
-	-- Determine code block state at start of range
+	-- Determine code block and ignore directive state at start of range
 	local in_code_block = false
+	local in_ignore = false
 	for i = 1, start_line - 1 do
 		if config.get("skip_code_blocks") and is_code_block_fence(all_lines[i]) then
 			in_code_block = not in_code_block
+		end
+		if is_ignore_start(all_lines[i]) then
+			in_ignore = true
+		elseif is_ignore_end(all_lines[i]) then
+			in_ignore = false
 		end
 	end
 
@@ -529,15 +559,26 @@ function M.format_range(bufnr, start_line, end_line)
 
 	-- Format range lines, tracking code block state
 	for i, line in ipairs(lines) do
-		local is_fence = config.get("skip_code_blocks") and is_code_block_fence(line)
+		local start_directive = is_ignore_start(line)
+		local end_directive = is_ignore_end(line)
 
+		if start_directive then
+			in_ignore = true
+		end
+
+		local is_fence = config.get("skip_code_blocks") and is_code_block_fence(line)
 		if is_fence then
 			in_code_block = not in_code_block
 		end
 
-		-- Don't format fence lines or lines inside code blocks (when skip enabled)
-		if not (is_fence or (config.get("skip_code_blocks") and in_code_block)) then
+		-- Skip formatting if inside ignore directives or inside a code block (when enabled),
+		-- or if the line itself is a directive/fence (preserve lines as-is)
+		if not (start_directive or end_directive or (in_ignore) or (is_fence or (config.get("skip_code_blocks") and in_code_block))) then
 			lines[i] = M.format(line)
+		end
+
+		if end_directive then
+			in_ignore = false
 		end
 	end
 

@@ -16,9 +16,10 @@ A Neovim plugin that adds proper spacing between CJK (Chinese, Japanese, Korean)
   - `!` → `！` (exclamation mark)
 - **Parenthesis Conversion**: Converts `()` to `（）` around CJK text
 - **Duplicate Mark Normalization**:
-  - `。。。` → `……` (ellipsis)
-  - Multiple `？` or `！` → single mark
   - Multiple duplicate punctuation → single mark
+  - `。。。` → `。`
+  - `？？？` → `？`
+  - `！！！` → `！`
 - **Markdown Support**: Handles spacing around inline code, bold, and links
 - **Code Block Skipping**: Preserves content inside Markdown code blocks (` ``` `) without formatting
 - **Auto-format on Save**: Optional automatic formatting when saving files
@@ -167,6 +168,8 @@ require("pangu").setup({
 - `:PanguLine` - Format current line
 - `:PanguSelection` - Format selected text (visual mode)
 - `:PanguVersion` - Show plugin version
+- `:PanguEnable` - Enable pangu formatting
+- `:PanguDisable` - Disable pangu formatting
 
 ### Programmatic Usage
 
@@ -369,6 +372,10 @@ Output:
 With `skip_code_blocks = true`, the content inside `` ``` `` is left unchanged.
 With `skip_code_blocks = false`, formatting is applied to all text including code blocks.
 ````
+
+**9. Disable pangu formatting**
+
+The `pangu-ignore-start` comment is a directive used to disable pangu formatting for a specific range of code. The formatting is re-enabled by the `pangu-ignore-end` comment. This feature is primarily designed for use within Markdown files to preserve the formatting of auto-generated content like tables or documentation.
 
 ### Combined Example
 

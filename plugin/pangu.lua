@@ -28,4 +28,16 @@ vim.api.nvim_create_user_command("PanguVersion", function()
 	print("pangu.nvim v" .. pangu.version)
 end, {})
 
+-- User command: Enable pangu formatting
+vim.api.nvim_create_user_command("PanguEnable", function()
+	pangu.config.set("enabled", true)
+	print("pangu.nvim: enabled")
+end, {})
+
+-- User command: Disable pangu formatting
+vim.api.nvim_create_user_command("PanguDisable", function()
+	pangu.config.set("enabled", false)
+	print("pangu.nvim: disabled")
+end, {})
+
 print("pangu.nvim loaded")
