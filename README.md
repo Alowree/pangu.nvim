@@ -380,8 +380,8 @@ The `pangu-ignore-start` comment is a directive used to disable pangu formatting
 ### Combined Example
 
 ```
-Input:  中文English123和(括号)里的"引用"。。。？？？
-Output: 中文 English 123 和（括号）里的“引用”。？
+Input:  中文English更多123和(括号)里的"引用"。。。为什么？？？
+Output: 中文 English 更多 123 和（括号）里的“引用”。为什么？
 ```
 
 ### Code Block Example
