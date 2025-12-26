@@ -1,0 +1,90 @@
+*pangu.txt* Proper spacing and punctuation for CJK text
+
+==============================================================================
+PANGU.NVIM                                                           *pangu*
+
+A Neovim plugin that adds proper spacing between CJK (Chinese, Japanese, 
+Korean) and English/Digits, along with context-aware Chinese punctuation 
+normalization.
+
+==============================================================================
+CONTENTS                                                    *pangu-contents*
+
+    1. Installation..........................|pangu-installation|
+    2. Configuration.........................|pangu-config|
+    3. Commands..............................|pangu-commands|
+    4. API...................................|pangu-api|
+    5. Examples..............................|pangu-examples|
+
+==============================================================================
+INSTALLATION                                            *pangu-installation*
+
+Using lazy.nvim:
+>
+    {
+      "alowree/pangu.nvim",
+      ft = { "markdown", "text", "norg" },
+      config = function()
+        require("pangu").setup({
+          enable_on_save = true,
+        })
+      end,
+    }
+<
+==============================================================================
+CONFIGURATION                                                 *pangu-config*
+
+The setup function accepts a table with the following keys:
+                                                              *pangu-options*
+
+enable_spacing (boolean)        Master toggle for spacing. Default: true
+add_space_around_markdown (boolean)
+                                Spaces around `code`, **bold**, and links.
+enable_punct_convert (boolean)  English -> Chinese punctuation.
+enable_paren_convert (boolean)  Bidirectional () <-> （）.
+enable_quote_convert (boolean)  ASCII -> Chinese curly quotes.
+enable_dedup_marks (boolean)    Collapse marks (。。。 -> 。).
+skip_code_blocks (boolean)      Ignore ``` blocks. Default: true.
+enable_on_save (boolean)        Auto-format on save. Default: false.
+
+==============================================================================
+COMMANDS                                                    *pangu-commands*
+
+:Pangu                          Format the entire buffer.
+:PanguLine                      Format the current line.
+:PanguSelection                 Format the visual selection.
+:PanguToggle                    Toggle formatting on/off.
+:PanguVersion                   Show plugin version.
+
+==============================================================================
+API                                                              *pangu-api*
+
+require('pangu').format({text})                             *pangu.format()*
+    Returns a formatted string of the input text.
+
+require('pangu').toggle()                                   *pangu.toggle()*
+    Toggles the enabled state and returns the new state.
+
+require('pangu').get_status()                           *pangu.get_status()*
+    Returns a string icon/label for use in statuslines.
+
+==============================================================================
+EXAMPLES                                                    *pangu-examples*
+
+Spacing:
+    Input:  中文English123
+    Output: 中文 English 123
+
+Markdown:
+    Input:  点击[这里](url)
+    Output: 点击 [这里](url)
+
+Parentheses:
+    Input:  中文(备注)
+    Output: 中文（备注）
+
+    Input:  English（note）
+    Output: English (note)
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

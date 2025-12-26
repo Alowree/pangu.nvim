@@ -1,480 +1,273 @@
--- Core text processing logic
--- Implements all formatting transformations
-
 local M = {}
 local utils = require("pangu.utils")
 local tokenizer = require("pangu.tokenizer")
 local config = require("pangu.config")
 
--- Add space between CJK and English words
-local function add_space_between_cjk_and_english(text)
-	local result = {}
-	local tokens = tokenizer.tokenize(text)
+--------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
 
-	local function next_non_ws(i)
-		local j = i + 1
-		while j <= #tokens and tokens[j].type == tokenizer.TokenType.WHITESPACE do
-			j = j + 1
-		end
-		return j
+local function is_cjk_content(token_obj)
+	if not token_obj then
+		return false
 	end
-
-	for i = 1, #tokens do
-		table.insert(result, tokens[i].token)
-
-		if i < #tokens then
-			local j = next_non_ws(i)
-			if j <= #tokens then
-				local curr_type = tokens[i].type
-				local next_type = tokens[j].type
-
-				if tokens[i + 1].type ~= tokenizer.TokenType.WHITESPACE then
-					if
-						(curr_type == tokenizer.TokenType.CHINESE and next_type == tokenizer.TokenType.ENGLISH)
-						or (curr_type == tokenizer.TokenType.ENGLISH and next_type == tokenizer.TokenType.CHINESE)
-					then
-						table.insert(result, " ")
-					end
-				end
-			end
-		end
-	end
-
-	return table.concat(result)
+	-- A token is "CJK Content" if it is a Chinese character
+	-- BUT NOT a punctuation mark (like ，。！？)
+	local token = token_obj.token
+	return utils.is_chinese(token) and not utils.is_chinese_punctuation(token)
 end
 
--- Add space between CJK and digits
-local function add_space_between_cjk_and_digit(text)
-	local result = {}
-	local tokens = tokenizer.tokenize(text)
-
-	local function next_non_ws(i)
-		local j = i + 1
-		while j <= #tokens and tokens[j].type == tokenizer.TokenType.WHITESPACE do
-			j = j + 1
+local function find_closing_token(stream, start_pos, close_token)
+	local i = start_pos + 1
+	while i <= stream.size do
+		if stream.tokens[i].token == close_token then
+			return i
 		end
-		return j
+		i = i + 1
 	end
-
-	for i = 1, #tokens do
-		table.insert(result, tokens[i].token)
-
-		if i < #tokens then
-			local j = next_non_ws(i)
-			if j <= #tokens then
-				local curr_type = tokens[i].type
-				local next_type = tokens[j].type
-
-				if tokens[i + 1].type ~= tokenizer.TokenType.WHITESPACE then
-					if
-						(curr_type == tokenizer.TokenType.CHINESE and next_type == tokenizer.TokenType.DIGIT)
-						or (curr_type == tokenizer.TokenType.DIGIT and next_type == tokenizer.TokenType.CHINESE)
-					then
-						table.insert(result, " ")
-					end
-				end
-			end
-		end
-	end
-
-	return table.concat(result)
+	return nil
 end
 
--- Add spaces between CJK and Markdown constructs (inline code, bold markers, links)
-local function add_space_around_markdown(text)
-	-- Token-based approach: detect markdown units (`code`, **bold**, [link](url))
-	-- and add spaces only on the Chinese-character side (not on Chinese punctuation).
-	local tokens = tokenizer.tokenize(text)
+--------------------------------------------------------------------------------
+-- Spacing Logic
+--------------------------------------------------------------------------------
+
+local function apply_content_spacing(text)
+	local stream = tokenizer.tokenize(text)
 	local out = {}
-	local i = 1
-	while i <= #tokens do
-		local t = tokens[i]
+	local types = tokenizer.TokenType
 
-		-- Inline code delimited by backticks
-		if t.token == "`" then
-			local k = nil
-			for j = i + 1, #tokens do
-				if tokens[j].token == "`" then
-					k = j
-					break
-				end
-			end
-			if not k then
-				table.insert(out, t.token)
-				i = i + 1
-			else
-				-- prev non-ws
-				local p = i - 1
-				while p >= 1 and tokens[p].type == tokenizer.TokenType.WHITESPACE do
-					p = p - 1
-				end
-				-- next non-ws
-				local q = k + 1
-				while q <= #tokens and tokens[q].type == tokenizer.TokenType.WHITESPACE do
-					q = q + 1
-				end
+	while not stream:is_eof() do
+		local curr = stream:next()
+		table.insert(out, curr.token)
 
-				if p >= 1 and tokens[p].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[p].token) then
-					if #out > 0 and out[#out] ~= " " then
-						table.insert(out, " ")
-					end
-				end
+		local next_token = stream:peek(0)
+		if next_token and curr.type ~= types.WHITESPACE and next_token.type ~= types.WHITESPACE then
+			local t1, t2 = curr.type, next_token.type
+			-- Standard CJK <-> English/Digit spacing
+			local is_cjk_boundary = (t1 == types.CHINESE and (t2 == types.ENGLISH or t2 == types.DIGIT))
+				or (t2 == types.CHINESE and (t1 == types.ENGLISH or t1 == types.DIGIT))
 
-				for j = i, k do
-					table.insert(out, tokens[j].token)
-				end
-
-				if q <= #tokens and tokens[q].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[q].token) then
-					table.insert(out, " ")
-				end
-
-				i = k + 1
+			-- FIX: Handle English parentheses spacing when adjacent to English text
+			if t1 == types.ENGLISH and next_token.token == "(" then
+				is_cjk_boundary = true
 			end
 
-		-- Bold markers **...** (supporting ** only)
-		elseif t.token == "*" and tokens[i + 1] and tokens[i + 1].token == "*" then
-			local start = i
-			local k = nil
-			for j = i + 2, #tokens - 1 do
-				if tokens[j].token == "*" and tokens[j + 1] and tokens[j + 1].token == "*" then
-					k = j + 1
-					break
-				end
+			if is_cjk_boundary then
+				table.insert(out, " ")
 			end
-			if not k then
-				table.insert(out, t.token)
-				i = i + 1
-			else
-				local p = start - 1
-				while p >= 1 and tokens[p].type == tokenizer.TokenType.WHITESPACE do
-					p = p - 1
-				end
-				local q = k + 1
-				while q <= #tokens and tokens[q].type == tokenizer.TokenType.WHITESPACE do
-					q = q + 1
-				end
+		end
+	end
+	return table.concat(out)
+end
 
-				if p >= 1 and tokens[p].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[p].token) then
-					if #out > 0 and out[#out] ~= " " then
-						table.insert(out, " ")
-					end
-				end
+local function apply_markdown_spacing(text)
+	local stream = tokenizer.tokenize(text)
+	local out = {}
+	local types = tokenizer.TokenType
 
-				for j = start, k do
-					table.insert(out, tokens[j].token)
-				end
+	while not stream:is_eof() do
+		local curr = stream:current()
+		local close_idx = nil
 
-				if q <= #tokens and tokens[q].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[q].token) then
-					table.insert(out, " ")
-				end
-
-				i = k + 1
-			end
-
-		-- Links [text](url)
-		elseif t.token == "[" then
-			local end_br = nil
-			for j = i + 1, #tokens do
-				if tokens[j].token == "]" then
-					end_br = j
-					break
-				end
-			end
-			if end_br and tokens[end_br + 1] and tokens[end_br + 1].token == "(" then
-				local close_paren = nil
-				for j = end_br + 2, #tokens do
-					if tokens[j].token == ")" then
-						close_paren = j
+		-- 1. Code Logic (supports `code` and ``code``)
+		if curr.type == types.MARKDOWN_CODE then
+			local fence_char = curr.token
+			local fence_size = (stream:peek(1) and stream:peek(1).token == fence_char) and 2 or 1
+			for j = stream.pos + fence_size, stream.size - (fence_size - 1) do
+				local match = true
+				for k = 0, fence_size - 1 do
+					if stream.tokens[j + k].token ~= fence_char then
+						match = false
 						break
 					end
 				end
-				if close_paren then
-					local p = i - 1
-					while p >= 1 and tokens[p].type == tokenizer.TokenType.WHITESPACE do
-						p = p - 1
-					end
-					local q = close_paren + 1
-					while q <= #tokens and tokens[q].type == tokenizer.TokenType.WHITESPACE do
-						q = q + 1
-					end
-
-					if p >= 1 and tokens[p].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[p].token) then
-						if #out > 0 and out[#out] ~= " " then
-							table.insert(out, " ")
-						end
-					end
-
-					for j = i, close_paren do
-						table.insert(out, tokens[j].token)
-					end
-
-					if q <= #tokens and tokens[q].type == tokenizer.TokenType.CHINESE and not utils.is_chinese_punctuation(tokens[q].token) then
-						table.insert(out, " ")
-					end
-
-					i = close_paren + 1
-				else
-					table.insert(out, t.token)
-					i = i + 1
-				end
-			else
-				table.insert(out, t.token)
-				i = i + 1
-			end
-
-		else
-			table.insert(out, t.token)
-			i = i + 1
-		end
-	end
-
-	local s = table.concat(out)
-	s = s:gsub("%s%s+", " ")
-	return s
-end
-
--- Convert English punctuation to Chinese equivalents when preceded by CJK
-local function convert_punctuation(text)
-	local result = {}
-	local tokens = tokenizer.tokenize(text)
-
-	for i = 1, #tokens do
-		local token = tokens[i].token
-		-- English punctuation -> Chinese when preceded by CJK
-		if utils.punct_map[token] then
-			-- Look back for previous non-whitespace token
-			local prev_idx = i - 1
-			while prev_idx >= 1 and tokens[prev_idx].type == tokenizer.TokenType.WHITESPACE do
-				prev_idx = prev_idx - 1
-			end
-
-			if prev_idx >= 1 then
-				local prev_token = tokens[prev_idx]
-				if prev_token.type == tokenizer.TokenType.CHINESE or utils.is_chinese_punctuation(prev_token.token) then
-					table.insert(result, utils.punct_map[token])
-				else
-					table.insert(result, token)
-				end
-			else
-				table.insert(result, token)
-			end
-		else
-			table.insert(result, token)
-		end
-	end
-
-	return table.concat(result)
-end
-
--- Convert English parentheses to Chinese around CJK characters
-local function convert_parentheses(text)
-	local tokens = tokenizer.tokenize(text)
-	local processed = {}
-	local open_converted = {} -- map of original open index -> converted char
-
-	for i = 1, #tokens do
-		local token = tokens[i].token
-
-		-- Opening English '(' -> convert to Chinese '（' if preceded by CJK
-		if token == "(" then
-			local prev = i - 1
-			while prev >= 1 and tokens[prev].type == tokenizer.TokenType.WHITESPACE do
-				prev = prev - 1
-			end
-			if prev >= 1 and tokens[prev].type == tokenizer.TokenType.CHINESE then
-				table.insert(processed, "（")
-				open_converted[i] = "（"
-			else
-				table.insert(processed, token)
-			end
-
-		-- Opening Chinese '（' -> convert to English '(' if preceded by English/Digit
-		elseif token == "（" then
-			local prev = i - 1
-			while prev >= 1 and tokens[prev].type == tokenizer.TokenType.WHITESPACE do
-				prev = prev - 1
-			end
-			if
-				prev >= 1
-				and (tokens[prev].type == tokenizer.TokenType.ENGLISH or tokens[prev].type == tokenizer.TokenType.DIGIT)
-			then
-				table.insert(processed, "(")
-				open_converted[i] = "("
-			else
-				table.insert(processed, token)
-			end
-
-		-- Closing paren: choose matching counterpart if the opening was converted
-		elseif token == ")" or token == "）" then
-			-- find matching opening in original tokens
-			local matched = nil
-			for j = i - 1, 1, -1 do
-				if tokens[j].token == "(" or tokens[j].token == "（" then
-					matched = j
+				if match then
+					close_idx = j + (fence_size - 1)
 					break
 				end
 			end
-			if matched and open_converted[matched] then
-				if open_converted[matched] == "（" then
-					table.insert(processed, "）")
-				else
-					table.insert(processed, ")")
+
+		-- 2. Bold/Italic/Mixed Logic (supports *, **, ***, _, __, ___)
+		elseif curr.type == types.MARKDOWN_EMPHASIS or curr.type == types.MARKDOWN_BOLD then
+			local marker = curr.token
+			local fence_size = 1
+			if stream:peek(1) and stream:peek(1).token == marker then
+				fence_size = 2
+				if stream:peek(2) and stream:peek(2).token == marker then
+					fence_size = 3
 				end
-			else
-				table.insert(processed, token)
+			end
+
+			local start_search = stream.pos + fence_size
+			for j = start_search, stream.size - (fence_size - 1) do
+				local match = true
+				for k = 0, fence_size - 1 do
+					if stream.tokens[j + k].token ~= marker then
+						match = false
+						break
+					end
+				end
+				-- Ensure the character AFTER the closing fence isn't the same marker
+				if match then
+					local after = stream.tokens[j + fence_size]
+					if not (after and after.token == marker) then
+						close_idx = j + (fence_size - 1)
+						break
+					end
+				end
+			end
+
+		-- 3. Links [text](url)
+		elseif curr.token == "[" then
+			local end_br = find_closing_token(stream, stream.pos, "]")
+			if
+				end_br
+				and stream:peek(end_br - stream.pos + 1)
+				and stream:peek(end_br - stream.pos + 1).token == "("
+			then
+				close_idx = find_closing_token(stream, end_br + 1, ")")
+			end
+		end
+
+		if close_idx then
+			-- PADDING BEFORE: Look at the token exactly before the start of the block
+			local prev = stream.tokens[stream.pos - 1]
+			if is_cjk_content(prev) then
+				table.insert(out, " ")
+			end
+
+			-- INSERT CONTENT
+			for j = stream.pos, close_idx do
+				table.insert(out, stream.tokens[j].token)
+			end
+
+			-- MOVE STREAM
+			stream.pos = close_idx + 1
+
+			-- PADDING AFTER: Look at the token exactly after the block
+			local next_t = stream:current()
+			if is_cjk_content(next_t) then
+				table.insert(out, " ")
 			end
 		else
-			table.insert(processed, token)
+			table.insert(out, stream:next().token)
 		end
 	end
-
-	return table.concat(processed)
+	return table.concat(out)
 end
 
--- Remove/normalize repeated punctuation marks
-local function normalize_repeated_marks(text)
-	local result = text
+--------------------------------------------------------------------------------
+-- Conversion Logic
+--------------------------------------------------------------------------------
 
-	-- Truncate repeated 。 to single 。
-	while result:match("。。") do
-		result = result:gsub("。。+", "。", 1)
-	end
+local function apply_conversions(text)
+	local stream = tokenizer.tokenize(text)
+	local out = {}
+	local types = tokenizer.TokenType
 
-	-- Truncate repeated ？ to single ?
-	while result:match("？？") do
-		result = result:gsub("？？+", "？", 1)
-	end
+	while not stream:is_eof() do
+		local curr = stream:next()
+		local token = curr.token
+		local prev = stream:peek_non_whitespace(-2)
 
-	-- Truncate repeated ！ to single !
-	while result:match("！！") do
-		result = result:gsub("！！+", "！", 1)
-	end
-
-	-- Truncate other repeated marks to single
-	for mark, _ in pairs(utils.dedup_chars) do
-		if mark ~= "。" and mark ~= "？" and mark ~= "！" then
-			-- Use a simpler approach: match the character followed by itself one or more times
-			local pattern = mark .. mark .. "+"
-			while result:match(mark .. mark) do
-				result = result:gsub(pattern, mark, 1)
+		if utils.punct_map[token] or token == "(" then
+			local map = utils.punct_map[token] or utils.paren_map[token]
+			if prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
+				token = map
+			end
+		elseif token == "（" then
+			if prev and (prev.type == types.ENGLISH or prev.type == types.DIGIT) then
+				token = "("
+			end
+		elseif token == ")" or token == "）" then
+			for j = #out, 1, -1 do
+				if out[j] == "（" then
+					token = "）"
+					break
+				elseif out[j] == "(" then
+					token = ")"
+					break
+				end
 			end
 		end
+		table.insert(out, token)
 	end
-
+	local result = table.concat(out)
+	result = result:gsub("([%a%d])%(", "%1 (")
 	return result
 end
 
--- Convert ASCII quotes to Chinese quotes when used in CJK contexts
-local function convert_quotes(text)
-	local tokens = tokenizer.tokenize(text)
-	local n = #tokens
+local function apply_quote_convert(text)
+	local stream = tokenizer.tokenize(text)
+	local n = stream.size
 
-	local function prev_non_ws(i)
-		for p = i - 1, 1, -1 do
-			if tokens[p].type ~= tokenizer.TokenType.WHITESPACE then
-				return p
-			end
-		end
-		return nil
-	end
-
-	local function next_non_ws(i)
-		for q = i + 1, n do
-			if tokens[q].type ~= tokenizer.TokenType.WHITESPACE then
-				return q
-			end
-		end
-		return nil
-	end
-
-	local i = 1
-	while i <= n do
-		local t = tokens[i].token
+	for i = 1, n do
+		local t = stream.tokens[i].token
 		if utils.is_ascii_quote(t) then
-			-- Find matching closing quote of the same type
 			local k = nil
 			for j = i + 1, n do
-				if tokens[j].token == t then
+				if stream.tokens[j].token == t then
 					k = j
 					break
 				end
 			end
 			if k then
-				-- Check if there's CJK inside the quotes or adjacent
-				local has_cjk_inside = false
-				for j = i + 1, k - 1 do
-					if tokens[j].type == tokenizer.TokenType.CHINESE then
-						has_cjk_inside = true
+				local has_cjk = false
+				for j = i, k do
+					if stream.tokens[j].type == tokenizer.TokenType.CHINESE then
+						has_cjk = true
 						break
 					end
 				end
-				local p = prev_non_ws(i)
-				local q = next_non_ws(k)
-				local around_cjk = (p and tokens[p].type == tokenizer.TokenType.CHINESE)
-					or (q and tokens[q].type == tokenizer.TokenType.CHINESE)
-
-				-- Convert ASCII quotes to Chinese quotes if CJK context detected
-				if has_cjk_inside or around_cjk then
-					local mapping = utils.quote_map[t]
-					if mapping then
-						tokens[i].token = mapping.open
-						tokens[k].token = mapping.close
+				if has_cjk or is_cjk_content(stream.tokens[i - 1]) or is_cjk_content(stream.tokens[k + 1]) then
+					if utils.quote_map and utils.quote_map[t] then
+						stream.tokens[i].token = utils.quote_map[t].open
+						stream.tokens[k].token = utils.quote_map[t].close
 					end
 				end
-				i = k + 1
-			else
-				i = i + 1
 			end
-		else
-			i = i + 1
 		end
 	end
-
 	local out = {}
-	for _, v in ipairs(tokens) do
+	for _, v in ipairs(stream.tokens) do
 		table.insert(out, v.token)
 	end
 	return table.concat(out)
 end
 
--- Main formatting function
--- Applies all transformations in sequence
+local function normalize_repeated_marks(text)
+	local result = text
+	for mark, _ in pairs(utils.dedup_chars) do
+		local double = mark .. mark
+		while result:find(double, 1, true) do
+			result = result:gsub(double, mark)
+		end
+	end
+	return result
+end
+
+--------------------------------------------------------------------------------
+-- Main API
+--------------------------------------------------------------------------------
+
 function M.format(text)
-	if not text or #text == 0 then
+	if not text or #text == 0 or config.get("enabled") == false then
 		return text
 	end
 
-	-- Global enable/disable
-	if config.get("enabled") == false then
-		return text
-	end
-
-	-- Apply transformations based on config
-	if config.get("enable_spacing") then
-		-- Apply fine-grained spacing rules
-		if config.get("add_space_between_cjk_and_english") then
-			text = add_space_between_cjk_and_english(text)
-		end
-		if config.get("add_space_between_cjk_and_digit") then
-			text = add_space_between_cjk_and_digit(text)
-		end
-		if config.get("add_space_around_markdown") then
-			text = add_space_around_markdown(text)
+	if config.get("enable_spacing_basic") then
+		text = apply_content_spacing(text)
+		if config.get("enable_spacing_expanded") then
+			text = apply_markdown_spacing(text)
 		end
 	end
-
-	if config.get("enable_punct_convert") then
-		text = convert_punctuation(text)
+	if config.get("enable_punct_convert") or config.get("enable_paren_convert") then
+		text = apply_conversions(text)
 	end
-
-	if config.get("enable_paren_convert") then
-		text = convert_parentheses(text)
-	end
-
 	if config.get("enable_quote_convert") then
-		text = convert_quotes(text)
+		text = apply_quote_convert(text)
 	end
-
 	if config.get("enable_dedup_marks") then
 		text = normalize_repeated_marks(text)
 	end
@@ -482,107 +275,77 @@ function M.format(text)
 	return text
 end
 
--- Check if a line is a code block fence (``` or ````)
--- Lua patterns don't support {3,} quantifiers, so match 3+ backticks as ```*
-local function is_code_block_fence(line)
-	return line:match("^%s*`%`%`%`*") ~= nil
+local function is_ignore_directive(line)
+	if not line then
+		return nil
+	end
+	if line:find("pangu%-ignore%-start") then
+		return "start"
+	end
+	if line:find("pangu%-ignore%-end") then
+		return "end"
+	end
+	return nil
 end
 
--- Check if a line is an ignore-start or ignore-end directive for pangu
-local function is_ignore_start(line)
-	return line and line:match("pangu%-ignore%-start") ~= nil
+local function get_fence_info(line)
+	if not line then
+		return nil
+	end
+	local fence = line:match("^%s*(```+)")
+	if fence then
+		return #fence
+	end
+	return nil
 end
 
-local function is_ignore_end(line)
-	return line and line:match("pangu%-ignore%-end") ~= nil
-end
-
--- Format a buffer or range
 function M.format_buffer(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+	if not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+
 	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
+	local opening_fence_size = nil
+	local manual_ignore = false
+	local changed = false
 
-	local in_code_block = false
-	local in_ignore = false
 	for i, line in ipairs(lines) do
-		local start_directive = is_ignore_start(line)
-		local end_directive = is_ignore_end(line)
+		local directive = is_ignore_directive(line)
+		local current_fence_size = get_fence_info(line)
 
-		if start_directive then
-			in_ignore = true
+		if directive == "start" then
+			manual_ignore = true
+		elseif directive == "end" then
+			manual_ignore = false
 		end
 
-		local is_fence = line:match("^%s*`{3,}") and config.get("skip_code_blocks")
-		if is_fence then
-			in_code_block = not in_code_block
+		if config.get("skip_code_blocks") then
+			if not opening_fence_size then
+				if current_fence_size then
+					opening_fence_size = current_fence_size
+				end
+			else
+				if current_fence_size and current_fence_size >= opening_fence_size then
+					opening_fence_size = nil
+				end
+			end
 		end
 
-		-- Skip formatting if inside ignore directives or inside a code block (when enabled),
-		-- or if the line itself is a directive/fence (preserve lines as-is)
-		if start_directive or end_directive or (in_ignore) or (is_fence or (in_code_block and config.get("skip_code_blocks"))) then
-			-- do nothing, preserve line as-is
-		else
-			lines[i] = M.format(line)
-		end
+		local should_skip = (opening_fence_size ~= nil) or manual_ignore
 
-		if end_directive then
-			in_ignore = false
-		end
-	end
-
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, true, lines)
-end
-
--- Format a specific range
-function M.format_range(bufnr, start_line, end_line)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-
-	-- Get all lines to track code block state from the beginning
-	local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
-
-	-- Determine code block and ignore directive state at start of range
-	local in_code_block = false
-	local in_ignore = false
-	for i = 1, start_line - 1 do
-		if config.get("skip_code_blocks") and is_code_block_fence(all_lines[i]) then
-			in_code_block = not in_code_block
-		end
-		if is_ignore_start(all_lines[i]) then
-			in_ignore = true
-		elseif is_ignore_end(all_lines[i]) then
-			in_ignore = false
+		if not should_skip and not directive and not current_fence_size then
+			local formatted = M.format(line)
+			if formatted ~= line then
+				lines[i] = formatted
+				changed = true
+			end
 		end
 	end
 
-	-- Get lines in range
-	local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, true)
-
-	-- Format range lines, tracking code block state
-	for i, line in ipairs(lines) do
-		local start_directive = is_ignore_start(line)
-		local end_directive = is_ignore_end(line)
-
-		if start_directive then
-			in_ignore = true
-		end
-
-		local is_fence = config.get("skip_code_blocks") and is_code_block_fence(line)
-		if is_fence then
-			in_code_block = not in_code_block
-		end
-
-		-- Skip formatting if inside ignore directives or inside a code block (when enabled),
-		-- or if the line itself is a directive/fence (preserve lines as-is)
-		if not (start_directive or end_directive or (in_ignore) or (is_fence or (config.get("skip_code_blocks") and in_code_block))) then
-			lines[i] = M.format(line)
-		end
-
-		if end_directive then
-			in_ignore = false
-		end
+	if changed then
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, true, lines)
 	end
-
-	vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, true, lines)
 end
 
 return M

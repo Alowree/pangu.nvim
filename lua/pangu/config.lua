@@ -6,11 +6,9 @@ local M = {}
 M.defaults = {
 	-- Master enable/disable for the plugin
 	enabled = true,
-	-- Enable specific formatting rules
-	enable_spacing = true, -- Add spaces between CJK and English/Digit
-	add_space_between_cjk_and_english = true,
-	add_space_between_cjk_and_digit = true,
-	add_space_around_markdown = true, -- Space around inline code, bold, links
+
+	enable_spacing_basic = true, -- Add spaces between CJK and English/Digit
+	enable_spacing_expanded = true, -- Space around inline code, bold, links
 
 	enable_punct_convert = true, -- Convert English punctuation to Chinese
 	enable_paren_convert = true, -- Convert English parentheses to Chinese
@@ -25,6 +23,14 @@ M.defaults = {
 
 	-- Code block handling
 	skip_code_blocks = true, -- Skip formatting inside markdown code blocks (``` or ````)
+
+	-- Deafult keymaps
+	keymaps = {
+		pangu_toggle = "<leader>pt",
+		pangu_line = "<leader>pl",
+		pangu_ignore_selection = "<leader>pi",
+		pangu_ignore_cleanup = "<leader>pc",
+	},
 }
 
 -- Current configuration
