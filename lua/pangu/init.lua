@@ -44,9 +44,9 @@ end
 function M.get_status()
 	local enabled = M.config.get("enabled")
 	if not enabled then
-		return "󱅔 Pangu" -- Or "Pangu: OFF"
+		return "🪫 Pangu" -- Or "Pangu: OFF"
 	end
-	return "󱅓 Pangu" -- Or "Pangu: ON"
+	return "🔋 Pangu" -- Or "Pangu: ON"
 end
 
 -- Get version
