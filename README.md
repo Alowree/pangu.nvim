@@ -2,6 +2,7 @@
 
 pangu.nvim is a Neovim plugin that enhances text readability by automatically applying proper spacing and converting punctuation and quotes in mixed-language content, primarily focusing on CJK and English text.
 
+
 ## Features
 
 - **Intelligent Spacing:**
@@ -88,6 +89,7 @@ use {
 ## Configuration
 
 Call the `setup` function in your Neovim configuration (e.g., `init.lua` or a dedicated plugin configuration file) to customize `pangu.nvim`.
+
 
 ### Default options
 
