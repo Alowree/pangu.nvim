@@ -48,10 +48,72 @@ local function apply_content_spacing(text)
 			local is_cjk_boundary = (t1 == types.CHINESE and (t2 == types.ENGLISH or t2 == types.DIGIT))
 				or (t2 == types.CHINESE and (t1 == types.ENGLISH or t1 == types.DIGIT))
 
-			-- FIX: Handle English parentheses spacing when adjacent to English text
+			-- =========================================================================
+			-- NEW: Handle English parentheses spacing when adjacent to English text
+			-- (added: 2026-02-28)
+			-- =========================================================================
 			if t1 == types.ENGLISH and next_token.token == "(" then
-				is_cjk_boundary = true
+				-- Check if parentheses content is English
+				local close_idx = find_closing_token(stream, stream.pos + 1, ")")
+				if close_idx then
+					local has_english = false
+					local has_cjk = false
+					for j = stream.pos + 1, close_idx - 1 do
+						local inner = stream.tokens[j]
+						if inner.type == types.ENGLISH then
+							has_english = true
+						elseif inner.type == types.CHINESE then
+							has_cjk = true
+						end
+					end
+					-- Add space before English () in CJK context
+					if has_english and not has_cjk then
+						is_cjk_boundary = true
+					end
+				end
 			end
+			-- Handle Chinese parentheses with English content
+			if t1 == types.ENGLISH and next_token.token == "（" then
+				local close_idx = find_closing_token(stream, stream.pos + 1, "）")
+				if close_idx then
+					local has_english = false
+					local has_cjk = false
+					for j = stream.pos + 1, close_idx - 1 do
+						local inner = stream.tokens[j]
+						if inner.type == types.ENGLISH then
+							has_english = true
+						elseif inner.type == types.CHINESE then
+							has_cjk = true
+						end
+					end
+					if has_english and not has_cjk then
+						is_cjk_boundary = true
+					end
+				end
+			end
+			-- Handle CJK before Chinese parentheses with English content
+			if t1 == types.CHINESE and next_token.token == "（" then
+				local close_idx = find_closing_token(stream, stream.pos + 1, "）")
+				if close_idx then
+					local has_english = false
+					local has_cjk = false
+					for j = stream.pos + 1, close_idx - 1 do
+						local inner = stream.tokens[j]
+						if inner.type == types.ENGLISH then
+							has_english = true
+						elseif inner.type == types.CHINESE then
+							has_cjk = true
+						end
+					end
+					-- Add space before () that will be converted to ()
+					if has_english and not has_cjk then
+						is_cjk_boundary = true
+					end
+				end
+			end
+			-- =========================================================================
+			-- END: Handle English parentheses spacing (added: 2026-02-28)
+			-- =========================================================================
 
 			if is_cjk_boundary then
 				table.insert(out, " ")
@@ -166,21 +228,108 @@ local function apply_conversions(text)
 	local out = {}
 	local types = tokenizer.TokenType
 
+	-- =========================================================================
+	-- NEW: Content-aware parentheses conversion (added: 2026-02-28)
+	-- Keeps () when content inside is primarily English (e.g., "(Style Guide)")
+	-- =========================================================================
+
 	while not stream:is_eof() do
 		local curr = stream:next()
 		local token = curr.token
 		local prev = stream:peek_non_whitespace(-2)
 
-		if utils.punct_map[token] or token == "(" then
-			local map = utils.punct_map[token] or utils.paren_map[token]
+		-- Handle opening parenthesis with content-aware logic
+		if token == "(" then
+			-- Check if content inside is primarily English
+			local close_idx = find_closing_token(stream, stream.pos, ")")
+			if close_idx then
+				local has_english = false
+				local has_cjk = false
+				for j = stream.pos, close_idx - 1 do
+					local inner = stream.tokens[j]
+					if inner.type == types.ENGLISH then
+						has_english = true
+					elseif inner.type == types.CHINESE then
+						has_cjk = true
+					end
+				end
+				-- Keep English parentheses only if content has English and NO CJK
+				-- Example: "中文 (Style Guide)" keeps (), but "中文 (备注)" becomes "中文（备注）"
+				if has_english and not has_cjk then
+					-- Skip conversion, keep as () with original content
+					table.insert(out, "(")
+					-- Copy content inside parentheses
+					for j = stream.pos, close_idx - 1 do
+						table.insert(out, stream.tokens[j].token)
+					end
+					stream.pos = close_idx + 1
+					-- Add space after ) if next token is CJK
+					local next_tok = stream:current()
+					if next_tok and next_tok.type == types.CHINESE then
+						table.insert(out, ")")
+						table.insert(out, " ")
+						goto continue
+					end
+					table.insert(out, ")")
+					goto continue
+				end
+			end
+		end
+
+		-- =========================================================================
+		-- END: Content-aware parentheses conversion (added: 2026-02-28)
+		-- =========================================================================
+
+		-- Handle Chinese opening parenthesis with English content
+		if token == "（" then
+			-- Check if content inside is primarily English
+			local close_idx = find_closing_token(stream, stream.pos, "）")
+			if close_idx then
+				local has_english = false
+				local has_cjk = false
+				for j = stream.pos, close_idx - 1 do
+					local inner = stream.tokens[j]
+					if inner.type == types.ENGLISH then
+						has_english = true
+					elseif inner.type == types.CHINESE then
+						has_cjk = true
+					end
+				end
+				-- Convert to English parentheses if content has English and NO CJK
+				-- Example: "中文（Style Guide）" becomes "中文 (Style Guide)"
+				if has_english and not has_cjk then
+					table.insert(out, "(")
+					-- Copy content inside parentheses
+					for j = stream.pos, close_idx - 1 do
+						table.insert(out, stream.tokens[j].token)
+					end
+					stream.pos = close_idx + 1
+					-- Add space after ) if next token is CJK
+					local next_tok = stream:current()
+					if next_tok and next_tok.type == types.CHINESE then
+						table.insert(out, ")")
+						table.insert(out, " ")
+						goto continue
+					end
+					table.insert(out, ")")
+					goto continue
+				end
+			end
+		end
+
+		-- Existing punctuation conversion logic
+		if utils.punct_map[token] then
+			local map = utils.punct_map[token]
 			if prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
 				token = map
 			end
-		elseif token == "（" then
-			if prev and (prev.type == types.ENGLISH or prev.type == types.DIGIT) then
-				token = "("
+		elseif token == "(" then
+			-- Convert ( to ( if preceded by CJK
+			if prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
+				token = "（"
 			end
 		elseif token == ")" or token == "）" then
+			local next_tok = stream:peek(1)
 			for j = #out, 1, -1 do
 				if out[j] == "（" then
 					token = "）"
@@ -192,6 +341,7 @@ local function apply_conversions(text)
 			end
 		end
 		table.insert(out, token)
+		::continue::
 	end
 	local result = table.concat(out)
 	result = result:gsub("([%a%d])%(", "%1 (")

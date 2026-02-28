@@ -2,7 +2,6 @@
 
 pangu.nvim is a Neovim plugin that enhances text readability by automatically applying proper spacing and converting punctuation and quotes in mixed-language content, primarily focusing on CJK and English text.
 
-
 ## Features
 
 - **Intelligent Spacing:**
@@ -11,7 +10,25 @@ pangu.nvim is a Neovim plugin that enhances text readability by automatically ap
 
 - **Punctuation Conversion:** Converts common English punctuation (`, . ? ! : ;`) to their full-width Chinese equivalents when appropriate (`enable_punct_convert`). This conversion primarily occurs when punctuation follows CJK content.
 
+<!-- pangu-ignore-start -->
+
 - **Parentheses Conversion:** Bidirectionally converts parentheses. For example, `()` to `（）` when following CJK text, and `（）` to `()` when following English text (`enable_paren_convert`).
+  - Exception is as follows
+    - 错误：知名媒体设立风格指引（Style Guide）是其专业运作的基石。
+    - 正确：知名媒体设立风格指引 (Style Guide) 是其专业运作的基石。
+
+  | Input                                   | Output                                  | Behavior                                                |
+  | :-------------------------------------- | :-------------------------------------- | :------------------------------------------------------ |
+  | `中文 (备注)`                           | `中文（备注）`                          | CJK content inside `()` → Convert to CJK parentheses    |
+  | `中文 (Style Guide)`                    | `中文 (Style Guide)`                    | English content inside `()` → Keep English parentheses  |
+  | `English (note)`                        | `English (note)`                        | English context inside `()` → Keep English parentheses  |
+  | `English（note）`                       | `English (note)`                        | English context inside `（）` → Convert to English `()` |
+  | `中文（Style Guide）`                   | `中文 (Style Guide)`                    | English content inside `（）` → Convert to English `()` |
+  | `中文（备注）`                          | `中文（备注）`                          | CJK content inside `（）` → Keep Chinese parentheses    |
+  | `风格指引（Style Guide）是专业的基石。` | `风格指引 (Style Guide) 是专业的基石。` | Full example with proper spacing                        |
+  | `[链接](url)`                           | `[链接](url)`                           | Markdown links remain unchanged                         |
+
+<!-- pangu-ignore-end -->
 
 - **Quote Conversion:** Converts ASCII quotes (`"` , `'`) to Chinese quotes (`“ ”`, `‘ ’`) when they enclose CJK content (`enable_quote_convert`). Existing Chinese quotes in English contexts are left unchanged.
 
@@ -89,7 +106,6 @@ use {
 ## Configuration
 
 Call the `setup` function in your Neovim configuration (e.g., `init.lua` or a dedicated plugin configuration file) to customize `pangu.nvim`.
-
 
 ### Default options
 

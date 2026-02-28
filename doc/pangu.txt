@@ -3,8 +3,8 @@
 ==============================================================================
 PANGU.NVIM                                                           *pangu*
 
-A Neovim plugin that adds proper spacing between CJK (Chinese, Japanese, 
-Korean) and English/Digits, along with context-aware Chinese punctuation 
+A Neovim plugin that adds proper spacing between CJK (Chinese, Japanese,
+Korean) and English/Digits, along with context-aware Chinese punctuation
 normalization.
 
 ==============================================================================
@@ -85,6 +85,9 @@ Parentheses:
 
     Input:  English（note）
     Output: English (note)
+
+    Input:  风格指引（Style Guide）是专业的基石。
+    Output: 风格指引 (Style Guide) 是专业的基石。
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:
