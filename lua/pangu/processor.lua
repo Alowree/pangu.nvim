@@ -11,8 +11,6 @@ local function is_cjk_content(token_obj)
 	if not token_obj then
 		return false
 	end
-	-- A token is "CJK Content" if it is a Chinese character
-	-- BUT NOT a punctuation mark (like ，。！？)
 	local token = token_obj.token
 	return utils.is_chinese(token) and not utils.is_chinese_punctuation(token)
 end
@@ -26,6 +24,24 @@ local function find_closing_token(stream, start_pos, close_token)
 		i = i + 1
 	end
 	return nil
+end
+
+local function get_paren_content_info(stream, open_char, close_char)
+	local close_idx = find_closing_token(stream, stream.pos, close_char)
+	if not close_idx then
+		return nil
+	end
+	local has_english = false
+	local has_cjk = false
+	for j = stream.pos, close_idx - 1 do
+		local inner = stream.tokens[j]
+		if inner.type == tokenizer.TokenType.ENGLISH or inner.type == tokenizer.TokenType.DIGIT then
+			has_english = true
+		elseif inner.type == tokenizer.TokenType.CHINESE then
+			has_cjk = true
+		end
+	end
+	return { close_idx = close_idx, has_english = has_english, has_cjk = has_cjk }
 end
 
 --------------------------------------------------------------------------------
@@ -48,73 +64,6 @@ local function apply_content_spacing(text)
 			local is_cjk_boundary = (t1 == types.CHINESE and (t2 == types.ENGLISH or t2 == types.DIGIT))
 				or (t2 == types.CHINESE and (t1 == types.ENGLISH or t1 == types.DIGIT))
 
-			-- =========================================================================
-			-- NEW: Handle English parentheses spacing when adjacent to English text
-			-- (added: 2026-02-28)
-			-- =========================================================================
-			if t1 == types.ENGLISH and next_token.token == "(" then
-				-- Check if parentheses content is English
-				local close_idx = find_closing_token(stream, stream.pos + 1, ")")
-				if close_idx then
-					local has_english = false
-					local has_cjk = false
-					for j = stream.pos + 1, close_idx - 1 do
-						local inner = stream.tokens[j]
-						if inner.type == types.ENGLISH then
-							has_english = true
-						elseif inner.type == types.CHINESE then
-							has_cjk = true
-						end
-					end
-					-- Add space before English () in CJK context
-					if has_english and not has_cjk then
-						is_cjk_boundary = true
-					end
-				end
-			end
-			-- Handle Chinese parentheses with English content
-			if t1 == types.ENGLISH and next_token.token == "（" then
-				local close_idx = find_closing_token(stream, stream.pos + 1, "）")
-				if close_idx then
-					local has_english = false
-					local has_cjk = false
-					for j = stream.pos + 1, close_idx - 1 do
-						local inner = stream.tokens[j]
-						if inner.type == types.ENGLISH then
-							has_english = true
-						elseif inner.type == types.CHINESE then
-							has_cjk = true
-						end
-					end
-					if has_english and not has_cjk then
-						is_cjk_boundary = true
-					end
-				end
-			end
-			-- Handle CJK before Chinese parentheses with English content
-			if t1 == types.CHINESE and next_token.token == "（" then
-				local close_idx = find_closing_token(stream, stream.pos + 1, "）")
-				if close_idx then
-					local has_english = false
-					local has_cjk = false
-					for j = stream.pos + 1, close_idx - 1 do
-						local inner = stream.tokens[j]
-						if inner.type == types.ENGLISH then
-							has_english = true
-						elseif inner.type == types.CHINESE then
-							has_cjk = true
-						end
-					end
-					-- Add space before () that will be converted to ()
-					if has_english and not has_cjk then
-						is_cjk_boundary = true
-					end
-				end
-			end
-			-- =========================================================================
-			-- END: Handle English parentheses spacing (added: 2026-02-28)
-			-- =========================================================================
-
 			if is_cjk_boundary then
 				table.insert(out, " ")
 			end
@@ -132,7 +81,7 @@ local function apply_markdown_spacing(text)
 		local curr = stream:current()
 		local close_idx = nil
 
-		-- 1. Code Logic (supports `code` and ``code``)
+		-- 1. Code Logic
 		if curr.type == types.MARKDOWN_CODE then
 			local fence_char = curr.token
 			local fence_size = (stream:peek(1) and stream:peek(1).token == fence_char) and 2 or 1
@@ -149,8 +98,6 @@ local function apply_markdown_spacing(text)
 					break
 				end
 			end
-
-		-- 2. Bold/Italic/Mixed Logic (supports *, **, ***, _, __, ___)
 		elseif curr.type == types.MARKDOWN_EMPHASIS or curr.type == types.MARKDOWN_BOLD then
 			local marker = curr.token
 			local fence_size = 1
@@ -160,7 +107,6 @@ local function apply_markdown_spacing(text)
 					fence_size = 3
 				end
 			end
-
 			local start_search = stream.pos + fence_size
 			for j = start_search, stream.size - (fence_size - 1) do
 				local match = true
@@ -170,7 +116,6 @@ local function apply_markdown_spacing(text)
 						break
 					end
 				end
-				-- Ensure the character AFTER the closing fence isn't the same marker
 				if match then
 					local after = stream.tokens[j + fence_size]
 					if not (after and after.token == marker) then
@@ -179,35 +124,22 @@ local function apply_markdown_spacing(text)
 					end
 				end
 			end
-
-		-- 3. Links [text](url)
 		elseif curr.token == "[" then
 			local end_br = find_closing_token(stream, stream.pos, "]")
-			if
-				end_br
-				and stream:peek(end_br - stream.pos + 1)
-				and stream:peek(end_br - stream.pos + 1).token == "("
-			then
+			if end_br and stream:peek(end_br - stream.pos + 1) and stream:peek(end_br - stream.pos + 1).token == "(" then
 				close_idx = find_closing_token(stream, end_br + 1, ")")
 			end
 		end
 
 		if close_idx then
-			-- PADDING BEFORE: Look at the token exactly before the start of the block
 			local prev = stream.tokens[stream.pos - 1]
 			if is_cjk_content(prev) then
 				table.insert(out, " ")
 			end
-
-			-- INSERT CONTENT
 			for j = stream.pos, close_idx do
 				table.insert(out, stream.tokens[j].token)
 			end
-
-			-- MOVE STREAM
 			stream.pos = close_idx + 1
-
-			-- PADDING AFTER: Look at the token exactly after the block
 			local next_t = stream:current()
 			if is_cjk_content(next_t) then
 				table.insert(out, " ")
@@ -228,108 +160,30 @@ local function apply_conversions(text)
 	local out = {}
 	local types = tokenizer.TokenType
 
-	-- =========================================================================
-	-- NEW: Content-aware parentheses conversion (added: 2026-02-28)
-	-- Keeps () when content inside is primarily English (e.g., "(Style Guide)")
-	-- =========================================================================
-
 	while not stream:is_eof() do
 		local curr = stream:next()
 		local token = curr.token
 		local prev = stream:peek_non_whitespace(-2)
 
-		-- Handle opening parenthesis with content-aware logic
 		if token == "(" then
-			-- Check if content inside is primarily English
-			local close_idx = find_closing_token(stream, stream.pos, ")")
-			if close_idx then
-				local has_english = false
-				local has_cjk = false
-				for j = stream.pos, close_idx - 1 do
-					local inner = stream.tokens[j]
-					if inner.type == types.ENGLISH then
-						has_english = true
-					elseif inner.type == types.CHINESE then
-						has_cjk = true
-					end
-				end
-				-- Keep English parentheses only if content has English and NO CJK
-				-- Example: "中文 (Style Guide)" keeps (), but "中文 (备注)" becomes "中文（备注）"
-				if has_english and not has_cjk then
-					-- Skip conversion, keep as () with original content
-					table.insert(out, "(")
-					-- Copy content inside parentheses
-					for j = stream.pos, close_idx - 1 do
-						table.insert(out, stream.tokens[j].token)
-					end
-					stream.pos = close_idx + 1
-					-- Add space after ) if next token is CJK
-					local next_tok = stream:current()
-					if next_tok and next_tok.type == types.CHINESE then
-						table.insert(out, ")")
-						table.insert(out, " ")
-						goto continue
-					end
-					table.insert(out, ")")
-					goto continue
-				end
-			end
-		end
-
-		-- =========================================================================
-		-- END: Content-aware parentheses conversion (added: 2026-02-28)
-		-- =========================================================================
-
-		-- Handle Chinese opening parenthesis with English content
-		if token == "（" then
-			-- Check if content inside is primarily English
-			local close_idx = find_closing_token(stream, stream.pos, "）")
-			if close_idx then
-				local has_english = false
-				local has_cjk = false
-				for j = stream.pos, close_idx - 1 do
-					local inner = stream.tokens[j]
-					if inner.type == types.ENGLISH then
-						has_english = true
-					elseif inner.type == types.CHINESE then
-						has_cjk = true
-					end
-				end
-				-- Convert to English parentheses if content has English and NO CJK
-				-- Example: "中文（Style Guide）" becomes "中文 (Style Guide)"
-				if has_english and not has_cjk then
-					table.insert(out, "(")
-					-- Copy content inside parentheses
-					for j = stream.pos, close_idx - 1 do
-						table.insert(out, stream.tokens[j].token)
-					end
-					stream.pos = close_idx + 1
-					-- Add space after ) if next token is CJK
-					local next_tok = stream:current()
-					if next_tok and next_tok.type == types.CHINESE then
-						table.insert(out, ")")
-						table.insert(out, " ")
-						goto continue
-					end
-					table.insert(out, ")")
-					goto continue
-				end
-			end
-		end
-
-		-- Existing punctuation conversion logic
-		if utils.punct_map[token] then
-			local map = utils.punct_map[token]
-			if prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
-				token = map
-			end
-		elseif token == "(" then
-			-- Convert ( to ( if preceded by CJK
-			if prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
+			-- Content-aware conversion: Keep () if content is English and preceded by CJK
+			local info = get_paren_content_info(stream, "(", ")")
+			if info and info.has_english and not info.has_cjk then
+				-- Keep as (
+			elseif prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
 				token = "（"
 			end
+		elseif token == "（" then
+			-- Convert to ( if preceded by English or if content is English
+			local info = get_paren_content_info(stream, "（", "）")
+			local is_eng_context = prev and (prev.type == types.ENGLISH or prev.type == types.DIGIT)
+			if info and info.has_english and not info.has_cjk then
+				token = "("
+			elseif is_eng_context then
+				token = "("
+			end
 		elseif token == ")" or token == "）" then
-			local next_tok = stream:peek(1)
+			-- Match opening paren style
 			for j = #out, 1, -1 do
 				if out[j] == "（" then
 					token = "）"
@@ -339,19 +193,21 @@ local function apply_conversions(text)
 					break
 				end
 			end
+		elseif utils.punct_map[token] then
+			local map = utils.punct_map[token]
+			if prev and (prev.type == types.CHINESE or utils.is_chinese_punctuation(prev.token)) then
+				token = map
+			end
 		end
+
 		table.insert(out, token)
-		::continue::
 	end
-	local result = table.concat(out)
-	result = result:gsub("([%a%d])%(", "%1 (")
-	return result
+	return table.concat(out)
 end
 
 local function apply_quote_convert(text)
 	local stream = tokenizer.tokenize(text)
 	local n = stream.size
-
 	for i = 1, n do
 		local t = stream.tokens[i].token
 		if utils.is_ascii_quote(t) then
@@ -405,7 +261,6 @@ function M.format(text)
 	if not text or #text == 0 or config.get("enabled") == false then
 		return text
 	end
-
 	if config.get("enable_spacing_basic") then
 		text = apply_content_spacing(text)
 		if config.get("enable_spacing_expanded") then
@@ -421,69 +276,46 @@ function M.format(text)
 	if config.get("enable_dedup_marks") then
 		text = normalize_repeated_marks(text)
 	end
-
 	return text
 end
 
 local function is_ignore_directive(line)
-	if not line then
-		return nil
-	end
-	if line:find("pangu%-ignore%-start") then
-		return "start"
-	end
-	if line:find("pangu%-ignore%-end") then
-		return "end"
-	end
+	if not line then return nil end
+	if line:find("pangu%-ignore%-start") then return "start" end
+	if line:find("pangu%-ignore%-end") then return "end" end
 	return nil
 end
 
 local function get_fence_info(line)
-	if not line then
-		return nil
-	end
+	if not line then return nil end
 	local fence = line:match("^%s*(```+)")
-	if fence then
-		return #fence
-	end
+	if fence then return #fence end
 	return nil
 end
 
 function M.format_buffer(bufnr)
 	bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
-	if not vim.api.nvim_buf_is_valid(bufnr) then
-		return
-	end
-
+	if not vim.api.nvim_buf_is_valid(bufnr) then return end
 	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
 	local opening_fence_size = nil
 	local manual_ignore = false
 	local changed = false
-
 	for i, line in ipairs(lines) do
 		local directive = is_ignore_directive(line)
 		local current_fence_size = get_fence_info(line)
-
 		if directive == "start" then
 			manual_ignore = true
 		elseif directive == "end" then
 			manual_ignore = false
 		end
-
 		if config.get("skip_code_blocks") then
 			if not opening_fence_size then
-				if current_fence_size then
-					opening_fence_size = current_fence_size
-				end
+				if current_fence_size then opening_fence_size = current_fence_size end
 			else
-				if current_fence_size and current_fence_size >= opening_fence_size then
-					opening_fence_size = nil
-				end
+				if current_fence_size and current_fence_size >= opening_fence_size then opening_fence_size = nil end
 			end
 		end
-
 		local should_skip = (opening_fence_size ~= nil) or manual_ignore
-
 		if not should_skip and not directive and not current_fence_size then
 			local formatted = M.format(line)
 			if formatted ~= line then
@@ -492,7 +324,6 @@ function M.format_buffer(bufnr)
 			end
 		end
 	end
-
 	if changed then
 		vim.api.nvim_buf_set_lines(bufnr, 0, -1, true, lines)
 	end

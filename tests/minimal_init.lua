@@ -4,9 +4,13 @@ local root = vim.fn.fnamemodify(".", ":p")
 vim.opt.runtimepath:append(root)
 
 -- 2. Add Plenary to the path (ADJUST THIS PATH if needed)
-local plenary_path = vim.fn.expand("~/.local/share/nvim/lazy/plenary.nvim")
+local plenary_path = vim.fn.expand("~/.local/share/nvim/site/pack/core/opt/plenary.nvim")
 if vim.fn.isdirectory(plenary_path) == 0 then
-	print("Error: Could not find plenary at " .. plenary_path)
+    -- Try the alternative common path
+    plenary_path = vim.fn.expand("~/.local/share/nvim/lazy/plenary.nvim")
+end
+if vim.fn.isdirectory(plenary_path) == 0 then
+	print("Error: Could not find plenary.")
 end
 vim.opt.runtimepath:append(plenary_path)
 

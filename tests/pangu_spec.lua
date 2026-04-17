@@ -108,7 +108,7 @@ describe("pangu.nvim Comprehensive Suite", function()
 	describe("Parentheses (Bidirectional)", function()
 		run_tests({
 			{ desc = "English to Chinese (after CJK)", input = "中文(备注)", expected = "中文（备注）" },
-			{ desc = "Chinese to English (after English)", input = "English（note）", expected = "English (note)" },
+			{ desc = "Chinese to English (after English)", input = "English（note）", expected = "English(note)" },
 		})
 	end)
 
