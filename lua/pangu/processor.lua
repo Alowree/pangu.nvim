@@ -303,7 +303,7 @@ local function get_comment_nodes(bufnr)
 		return {}
 	end
 	local root = parser:parse()[1]:root()
-	local ok_parse, query = pcall(vim.treesitter.query.parse, vim.bo[bufnr].filetype, "(comment) @comment")
+	local ok_parse, query = pcall(vim.treesitter.query.parse, parser:lang(), "(comment) @comment")
 	if not ok_parse then
 		return {}
 	end

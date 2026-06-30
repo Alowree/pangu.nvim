@@ -26,7 +26,7 @@ M.defaults = {
 
 	-- Comment formatting (treesitter-based)
 	enable_comment_format = true, -- Format comments in code files via treesitter
-	comment_filetypes = { "python", "lua", "go", "rust", "java", "c", "cpp", "javascript", "typescript", "bash", "zsh", "vim" },
+	comment_filetypes = { "python", "lua", "go", "rust", "java", "c", "cpp", "javascript", "typescript", "sh", "bash", "zsh", "vim" },
 
 	-- Deafult keymaps
 	keymaps = {
