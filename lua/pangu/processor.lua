@@ -303,7 +303,10 @@ local function get_comment_nodes(bufnr)
 		return {}
 	end
 	local root = parser:parse()[1]:root()
-	local query = vim.treesitter.query.parse(vim.bo[bufnr].filetype, "(comment) @comment")
+	local ok_parse, query = pcall(vim.treesitter.query.parse, vim.bo[bufnr].filetype, "(comment) @comment")
+	if not ok_parse then
+		return {}
+	end
 	local nodes = {}
 	for _, node in query:iter_captures(root, bufnr) do
 		table.insert(nodes, node)
