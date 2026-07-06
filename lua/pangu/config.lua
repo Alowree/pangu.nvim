@@ -24,6 +24,10 @@ M.defaults = {
 	-- Code block handling
 	skip_code_blocks = true, -- Skip formatting inside markdown code blocks (``` or ````)
 
+	-- Comment formatting (treesitter-based)
+	enable_comment_format = true, -- Format comments in code files via treesitter
+	comment_filetypes = { "python", "lua", "go", "rust", "java", "c", "cpp", "javascript", "typescript", "sh", "bash", "zsh", "vim" },
+
 	-- Deafult keymaps
 	keymaps = {
 		pangu_toggle = "<leader>pt",

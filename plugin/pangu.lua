@@ -52,6 +52,11 @@ vim.api.nvim_create_user_command("PanguDisable", function()
 	print("pangu.nvim: disabled")
 end, { desc = "Disable pangu.nvim" })
 
+-- Format comments in buffer using treesitter
+vim.api.nvim_create_user_command("PanguComments", function()
+	pangu.format_buffer_comments()
+end, { desc = "Format comments in buffer with pangu.nvim" })
+
 -- Automatically format on save if enabled in config
 local augroup = vim.api.nvim_create_augroup("PanguAutocmds", { clear = true })
 
@@ -88,6 +93,18 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 		-- 4. Execute formatting on the specific buffer being saved
 		if matched then
 			pangu.format_buffer(args.buf)
+		end
+
+		-- 5. Format comments via treesitter for applicable filetypes
+		local comment_fts = conf.get("comment_filetypes")
+		if type(comment_fts) == "table" then
+			local ft = vim.bo[args.buf].filetype
+			for _, allowed_ft in ipairs(comment_fts) do
+				if ft == allowed_ft then
+					pangu.format_buffer_comments(args.buf)
+					break
+				end
+			end
 		end
 	end,
 	desc = "Auto-format buffer with pangu.nvim on save",

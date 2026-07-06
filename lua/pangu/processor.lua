@@ -62,7 +62,7 @@ local function apply_content_spacing(text)
 			local t1, t2 = curr.type, next_token.type
 			-- Standard CJK <-> English/Digit spacing
 			local is_cjk_boundary = (t1 == types.CHINESE and (t2 == types.ENGLISH or t2 == types.DIGIT))
-				or (t2 == types.CHINESE and (t1 == types.ENGLISH or t1 == types.DIGIT))
+					or (t2 == types.CHINESE and (t1 == types.ENGLISH or t1 == types.DIGIT))
 
 			if is_cjk_boundary then
 				table.insert(out, " ")
@@ -291,6 +291,80 @@ local function get_fence_info(line)
 	local fence = line:match("^%s*(```+)")
 	if fence then return #fence end
 	return nil
+end
+
+--------------------------------------------------------------------------------
+-- Comment Formatting (Treesitter-based)
+--------------------------------------------------------------------------------
+
+local function get_comment_nodes(bufnr)
+	local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+	if not ok or not parser then
+		return {}
+	end
+	local root = parser:parse()[1]:root()
+	local ok_parse, query = pcall(vim.treesitter.query.parse, parser:lang(), "(comment) @comment")
+	if not ok_parse then
+		return {}
+	end
+	local nodes = {}
+	for _, node in query:iter_captures(root, bufnr) do
+		table.insert(nodes, node)
+	end
+	return nodes
+end
+
+function M.format_buffer_comments(bufnr)
+	bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+	if not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+	if not config.get("enable_comment_format") then
+		return
+	end
+
+	local nodes = get_comment_nodes(bufnr)
+	if #nodes == 0 then
+		return
+	end
+
+	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
+	local changed = false
+
+	for _, node in ipairs(nodes) do
+		local start_row, start_col, end_row, end_col = node:range()
+
+		if start_row == end_row then
+			-- Single-line comment
+			local line = lines[start_row + 1]
+			local before = line:sub(1, start_col)
+			local comment_text = line:sub(start_col + 1)
+			local formatted = M.format(comment_text)
+			if formatted ~= comment_text then
+				lines[start_row + 1] = before .. formatted
+				changed = true
+			end
+		else
+			-- Multi-line comment: format each line
+			for row = start_row, end_row do
+				local line = lines[row + 1]
+				local line_start = (row == start_row) and (start_col + 1) or 1
+				local line_end = (row == end_row) and end_col or #line
+				local before = line:sub(1, line_start - 1)
+				local comment_text = line:sub(line_start, line_end)
+				local after = line:sub(line_end + 1)
+				local formatted = M.format(comment_text)
+				if formatted ~= comment_text then
+					lines[row + 1] = before .. formatted .. after
+					changed = true
+				end
+			end
+		end
+	end
+
+	if changed then
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, true, lines)
+	end
 end
 
 function M.format_buffer(bufnr)

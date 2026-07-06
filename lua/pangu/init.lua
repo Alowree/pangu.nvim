@@ -33,6 +33,11 @@ function M.format(text)
 	return M.processor.format(text)
 end
 
+-- Format comments in buffer using treesitter
+function M.format_buffer_comments(bufnr)
+	M.processor.format_buffer_comments(bufnr)
+end
+
 function M.toggle()
 	local current = M.config.get("enabled")
 	local new_state = not current
