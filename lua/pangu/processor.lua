@@ -329,35 +329,54 @@ function M.format_buffer(bufnr)
 	end
 end
 
+--- Format a specific range in the buffer
+--- @param bufnr number|nil Buffer number, nil for current buffer
+--- @param start_line number Starting line number (1-indexed)
+--- @param end_line number Ending line number (1-indexed)
 function M.format_range(bufnr, start_line, end_line)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
-  if not vim.api.nvim_buf_is_valid(bufnr) then return end
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    vim.notify("Invalid buffer", vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Validate line numbers
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+  start_line = math.max(1, start_line or 1)
+  end_line = math.min(total_lines, end_line or total_lines)
+  
+  if start_line > end_line then
+    vim.notify("Invalid range", vim.log.levels.ERROR)
+    return
+  end
   
   local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
+  local formatted_lines = {}
   local changed = false
   
-  for i, line in ipairs(lines) do
-    -- Check for ignore directives
+  for _, line in ipairs(lines) do
+    -- Check if line has ignore directives
     if line:find("pangu%-ignore%-start") or line:find("pangu%-ignore%-end") then
-      -- Skip ignore lines
-    elseif config.get("skip_code_blocks") then
-      -- Check if inside code block (simplified check)
-      local formatted = M.format(line)
-      if formatted ~= line then
-        lines[i] = formatted
-        changed = true
-      end
+      table.insert(formatted_lines, line)
     else
-      local formatted = M.format(line)
-      if formatted ~= line then
-        lines[i] = formatted
-        changed = true
+      -- Check for code fence (simplified)
+      local is_code_block = line:match("^%s*```")
+      if is_code_block and config.get("skip_code_blocks") then
+        table.insert(formatted_lines, line)
+      else
+        local formatted = M.format(line)
+        if formatted ~= line then
+          changed = true
+          table.insert(formatted_lines, formatted)
+        else
+          table.insert(formatted_lines, line)
+        end
       end
     end
   end
   
   if changed then
-    vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, lines)
+    vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, formatted_lines)
   end
 end
 
