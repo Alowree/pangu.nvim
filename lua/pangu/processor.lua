@@ -329,4 +329,36 @@ function M.format_buffer(bufnr)
 	end
 end
 
+function M.format_range(bufnr, start_line, end_line)
+  bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  if not vim.api.nvim_buf_is_valid(bufnr) then return end
+  
+  local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
+  local changed = false
+  
+  for i, line in ipairs(lines) do
+    -- Check for ignore directives
+    if line:find("pangu%-ignore%-start") or line:find("pangu%-ignore%-end") then
+      -- Skip ignore lines
+    elseif config.get("skip_code_blocks") then
+      -- Check if inside code block (simplified check)
+      local formatted = M.format(line)
+      if formatted ~= line then
+        lines[i] = formatted
+        changed = true
+      end
+    else
+      local formatted = M.format(line)
+      if formatted ~= line then
+        lines[i] = formatted
+        changed = true
+      end
+    end
+  end
+  
+  if changed then
+    vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, lines)
+  end
+end
+
 return M
